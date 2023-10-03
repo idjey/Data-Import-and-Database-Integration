@@ -11,6 +11,8 @@ import json
 import os
 
 # Function to import inventories from CSV files
+
+
 def import_inventories(directory):
     """
     Imports all CSV files into a dictionary of dataframes
@@ -74,32 +76,164 @@ def import_inventories(directory):
     return df_aliquots
 
 # Function to create tables in the PostgreSQL database
+
+
+# Function to create tables in the PostgreSQL database
 def create_tables(cursor):
     """
     Create tables to store specimen data
-    :param cursor: cursor in postgreSQL database
+    :param cursor: cursor in PostgreSQL database
     :return: nothing
     """
     # SQL statements to create tables
-    sql_study = ('CREATE TABLE IF NOT EXISTS study('
-                 'id    SERIAL UNIQUE,'
-                 'study VARCHAR UNIQUE,'
-                 'is_open BOOL, '
-                 'parent_study VARCHAR DEFAULT NULL, '
-                 'create_date DATE NOT NULL DEFAULT CURRENT_DATE,'
-                 'PRIMARY KEY (id)'
-                 ');')
+    sql_study = (
+        'CREATE TABLE IF NOT EXISTS study('
+        'id    SERIAL UNIQUE,'
+        'study VARCHAR UNIQUE,'
+        'is_open BOOL, '
+        'parent_study VARCHAR DEFAULT NULL, '
+        'create_date DATE NOT NULL DEFAULT CURRENT_DATE,'
+        'PRIMARY KEY (id)'
+        ');')
 
-    sql_participant = ('CREATE TABLE IF NOT EXISTS participant('
-                       'id  SERIAL UNIQUE,'
-                       'study   VARCHAR,'
-                       'participant_id  VARCHAR,'
-                       'create_date DATE NOT NULL DEFAULT CURRENT_DATE,'
-                       'PRIMARY KEY (study, participant_id),'
-                       'FOREIGN KEY (study) REFERENCES study (study)'
-                       ');')
+    sql_participant = (
+        'CREATE TABLE IF NOT EXISTS participant('
+        'id  SERIAL UNIQUE,'
+        'study   VARCHAR,'
+        'participant_id  VARCHAR,'
+        'create_date DATE NOT NULL DEFAULT CURRENT_DATE,'
+        'PRIMARY KEY (study, participant_id),'
+        'FOREIGN KEY (study) REFERENCES study (study)'
+        ');')
 
-    # ... (similar SQL statements for other tables)
+    sql_visit = (
+        'CREATE TABLE IF NOT EXISTS visit('
+        'id SERIAL UNIQUE,'
+        'study VARCHAR,'
+        'participant_id    VARCHAR,'
+        'visit VARCHAR,'
+        'visit_week VARCHAR,'
+        'create_date DATE NOT NULL DEFAULT CURRENT_DATE,'
+        'PRIMARY KEY (study, participant_id, visit),'
+        'FOREIGN KEY (study, participant_id) REFERENCES participant'
+        ');')
+
+    sql_specimen = (
+        'CREATE TABLE IF NOT EXISTS specimen('
+        'id SERIAL UNIQUE,'
+        'study VARCHAR,'
+        'participant_id VARCHAR,'
+        'visit VARCHAR,'
+        'draw_date  DATE,'
+        'aliquot_type   VARCHAR, '
+        'volume REAL, '
+        'unit VARCHAR, '
+        'start_vials SMALLINT,'
+        'create_date DATE NOT NULL DEFAULT CURRENT_DATE,'
+        # One visit may have multiple draw days
+        'PRIMARY KEY (study, participant_id, draw_date, aliquot_type, volume),'
+        'FOREIGN KEY (study, participant_id, visit) REFERENCES visit'
+        ');')
+
+    sql_aliquot = (
+        'CREATE TABLE IF NOT EXISTS aliquot('
+        'id SERIAL UNIQUE,'
+        'guid    VARCHAR,'  # Globally Unique Identifier, Barcode
+        'study VARCHAR,'
+        'participant_id  VARCHAR,'
+        'draw_date DATE,'
+        'aliquot_type    VARCHAR,'
+        'volume  REAL,'  # 4 bytes up to 6 decimal digits precision for REAL datatype
+        'unit    VARCHAR,'
+        'is_available    BOOL DEFAULT TRUE,'
+        'create_date DATE NOT NULL DEFAULT CURRENT_DATE,'
+        'PRIMARY KEY (guid),'
+        'FOREIGN KEY (study, participant_id, draw_date, aliquot_type, volume) REFERENCES specimen'
+        ');')
+
+    sql_location = (
+        'CREATE TABLE IF NOT EXISTS location('
+        'id SERIAL UNIQUE,'
+        'freezer_section VARCHAR,'
+        'position_1 SMALLINT,'  # 2 bytes of storage
+        'position_2 SMALLINT,'
+        'position_3 SMALLINT,'
+        'create_date DATE NOT NULL DEFAULT CURRENT_DATE,'
+        'PRIMARY KEY (id)'
+        ');')
+
+    sql_lab = (
+        'CREATE TABLE IF NOT EXISTS lab('
+        'id SERIAL UNIQUE, '
+        'name VARCHAR, '
+        'principal_investigator VARCHAR, '
+        'create_date DATE NOT NULL DEFAULT CURRENT_DATE, '
+        'PRIMARY KEY(id)'
+        ');')
+
+    sql_sample_request = (
+        'CREATE TABLE IF NOT EXISTS sample_request('
+        'id SERIAL UNIQUE, '
+        'name VARCHAR, '
+        'email VARCHAR, '
+        'user_id VARCHAR, '
+        'date_requested DATE, '
+        'comments VARCHAR, '
+        'fulfilled BOOL, '
+        'destination_lab_id INT, '
+        'create_date DATE NOT NULL DEFAULT CURRENT_DATE, '
+        'PRIMARY KEY(id), '
+        'FOREIGN KEY(destination_lab_id) REFERENCES lab'
+        ');')
+
+    sql_request_batch = (
+        'CREATE TABLE IF NOT EXISTS request_batch('
+        'id SERIAL UNIQUE, '
+        'approved BOOL, '
+        'approved_by VARCHAR, '
+        'approved_date DATE, '
+        'rejected BOOL, '
+        'rejected_by VARCHAR, '
+        'rejected_reason VARCHAR, '
+        'confirmed BOOL, '
+        'confirmed_by VARCHAR, '
+        'confirmed_date DATE, '
+        'request_id INT, '
+        'specimen_id INT, '
+        'qty INT DEFAULT 1, '
+        'create_date DATE NOT NULL DEFAULT CURRENT_DATE, '
+        'PRIMARY KEY(id), '
+        'FOREIGN KEY(specimen_id) REFERENCES specimen(id), '
+        'FOREIGN KEY(request_id) REFERENCES sample_request(id)'
+        ');')
+
+    sql_alt_id = (
+        'CREATE TABLE IF NOT EXISTS alt_id('
+        'id SERIAL NOT NULL, '
+        'init_participant_id VARCHAR, '
+        'init_study VARCHAR, '
+        'alt_ids_json JSONB, '
+        'alt_study VARCHAR, '
+        'alt_participant_id VARCHAR, '
+        'create_date DATE NOT NULL DEFAULT CURRENT_DATE, '
+        'PRIMARY KEY (init_study, init_participant_id, alt_study), '
+        'FOREIGN KEY (init_study, init_participant_id) REFERENCES participant(study, participant_id)'
+        ');')
+
+    sql_general_classifier = (
+        'CREATE TABLE IF NOT EXISTS general_classifier('
+        'id SERIAL NOT NULL, '
+        'study VARCHAR, '
+        'participant_id VARCHAR, '
+        'gender VARCHAR, '
+        'hiv_subtype VARCHAR, '
+        'fiebig_stage FLOAT, '
+        'fourth_gen_stage FLOAT, '
+        'is_thai BOOL, '
+        'risk VARCHAR, '
+        'first_arv_regimen VARCHAR, '
+        'PRIMARY KEY(study, participant_id)'
+        ');')
 
     # Execute SQL statements to create tables
     cursor.execute(sql_study)
@@ -112,7 +246,7 @@ def create_tables(cursor):
     cursor.execute(sql_sample_request)
     cursor.execute(sql_request_batch)
     cursor.execute(sql_alt_id)
-    cursor.execute(sql_general_classifier)  # NOT SOLD ON THIS NAME
+    cursor.execute(sql_general_classifier)  
 
 # Function to insert study data into the study table
 def insert_study(cursor, data_, parent_study_="RV254"):
